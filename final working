@@ -1,0 +1,118 @@
+from flask import Flask, render_template, request
+import pandas as pd
+import datetime
+import smtplib
+from email.message import EmailMessage
+from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
+import os
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Enter your authentication details
+GMAIL_ID = os.getenv('GMAIL_ID')
+GMAIL_PSWD = os.getenv('GMAIL_PSWD')
+
+# Load the initial DataFrame
+df = pd.read_excel("data.xlsx")
+
+def send_email(to, sub, msg):
+    try:
+        print(f"Email to {to} sent with subject: {sub} and message: {msg}")
+        em = EmailMessage()
+        em['From'] = GMAIL_ID
+        em['To'] = to
+        em['Subject'] = sub
+        em.set_content(msg)
+
+        # Use SMTP_SSL for secure connection
+        context = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        context.login(GMAIL_ID, GMAIL_PSWD)
+        context.sendmail(GMAIL_ID, to, em.as_string())
+        context.quit()
+    except Exception as e:
+        print(f"Error sending email: {e}")
+
+# ...
+
+def check_birthday_and_send_wishes():
+    today = datetime.datetime.now().strftime("%d-%m")
+    year_now = datetime.datetime.now().strftime("%Y")
+
+    for index, item in df.iterrows():
+        try:
+            # Try to convert 'Birthday' to string format
+            bday = item['Birthday'].strftime("%d-%m")
+        except AttributeError:
+            # Handle the case where 'Birthday' is already a string
+            bday = item['Birthday']
+
+        if today == bday and year_now not in str(item['Year']):
+            send_email(item['Email'], "Happy Birthday", item['Dialogue'])
+            df.at[index, 'Year'] = str(item['Year']) + ',' + str(year_now)
+
+    df.to_excel('data.xlsx', index=False)
+
+# ...
+
+
+# Check and send birthday wishes before starting the Flask app
+check_birthday_and_send_wishes()
+
+app = Flask(__name__, template_folder='templates')
+
+# Define a route to render the registration form
+@app.route('/')
+def index():
+    return render_template('add_user.html')
+
+# ...
+
+# Define a route to handle form submissions for user registration
+@app.route('/add_user', methods=['POST'])
+def add_user():
+    global df  # Use the global keyword to modify the outer variable
+
+    # Get values from the form
+    name = request.form['name']
+    birthday_str = request.form['birthday']
+    dialogue = request.form['dialogue']
+    year = request.form['year']
+    email = request.form['email']
+
+    # Convert the birthday string to a datetime object
+    try:
+        birthday = datetime.datetime.strptime(birthday_str, "%d-%m-%Y").strftime("%d-%m-%Y")
+    except ValueError:
+        return "Invalid date format. Please use the DD-MM-YYYY format."
+
+    # Check if the email already exists in the DataFrame
+    if email in df['Email'].values:
+        return "User with this email already exists. Please use a different email."
+
+    # Automatically assign Sno based on the number of existing rows
+    sno = len(df) + 1
+
+    # Append the new user data to the DataFrame using pd.concat
+    new_user = {'Sno': sno, 'Name': name, 'Birthday': birthday, 'Dialogue': dialogue, 'Year': year, 'Email': email}
+    df = pd.concat([df, pd.DataFrame([new_user])], ignore_index=True)
+
+    # Save the updated DataFrame to the Excel file
+    df.to_excel('data.xlsx', index=False)
+
+    # Render a template with a success message
+    return render_template('success.html', name=name, email=email)
+
+# ...
+
+if __name__ == '__main__':
+    # Schedule the task to run every day at midnight
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_birthday_and_send_wishes, 'cron', hour=0, minute=0)
+
+    # Start the scheduler
+    scheduler.start()
+
+    # Start the Flask application
+    app.run(debug=True)
