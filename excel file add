@@ -1,0 +1,51 @@
+from flask import Flask, render_template, request, redirect
+import pandas as pd
+from datetime import datetime
+
+app = Flask(__name__, template_folder='templates')
+
+# Load the initial DataFrame
+df = pd.read_excel("data.xlsx")
+
+# Define a route to render the form
+@app.route('/')
+def index():
+    return render_template('add_user.html')
+
+# Define a route to handle form submissions
+@app.route('/add_user', methods=['POST'])
+def add_user():
+    global df  # Use the global keyword to modify the outer variable
+
+    # Get values from the form
+    name = request.form['name']
+    birthday_str = request.form['birthday']
+    dialogue = request.form['dialogue']
+    year = request.form['year']
+    email = request.form['email']
+
+    # Convert the birthday string to a datetime object
+    try:
+        birthday = datetime.strptime(birthday_str, "%d-%m-%Y").strftime("%d-%m-%Y")
+    except ValueError:
+        return "Invalid date format. Please use the DD-MM-YYYY format."
+
+    # Check if the email already exists in the DataFrame
+    if email in df['Email'].values:
+        return "User with this email already exists. Please use a different email."
+
+    # Automatically assign Sno based on the number of existing rows
+    sno = len(df) + 1
+
+    # Append the new user data to the DataFrame using pd.concat
+    new_user = {'Sno': sno, 'Name': name, 'Birthday': birthday, 'Dialogue': dialogue, 'Year': year, 'Email': email}
+    df = pd.concat([df, pd.DataFrame([new_user])], ignore_index=True)
+
+    # Save the updated DataFrame to the Excel file
+    df.to_excel('data.xlsx', index=False)
+
+    # Redirect to the home page after adding the user
+    return redirect('/')
+
+if __name__ == '__main__':
+    app.run(debug=True)
