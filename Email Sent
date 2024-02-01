@@ -1,0 +1,50 @@
+import os
+import pandas as pd
+import datetime
+import smtplib
+from email.message import EmailMessage
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Enter your authentication details
+GMAIL_ID = os.getenv('GMAIL_ID')
+GMAIL_PSWD = os.getenv('GMAIL_PSWD')
+
+def sendEmail(to, sub, msg):
+    print(f"Email to {to} sent with subject: {sub} and message: {msg}")
+    em = EmailMessage()
+    em['From'] = GMAIL_ID
+    em['To'] = to
+    em['Subject'] = sub
+    em.set_content(msg)
+
+    context = smtplib.SMTP('smtp.gmail.com', 587)
+    context.starttls()
+    context.login(GMAIL_ID, GMAIL_PSWD)
+    context.sendmail(GMAIL_ID, to, em.as_string())
+    context.quit()
+
+if __name__ == "__main__":
+    sendEmail(GMAIL_ID, "Test Subject", "Test Message")
+
+    df = pd.read_excel("data.xlsx")
+
+    today = datetime.datetime.now().strftime("%d-%m")
+    yearNow = datetime.datetime.now().strftime("%Y")
+
+    writeInd = []
+    for index, item in df.iterrows():
+        bday = item['Birthday'].strftime("%d-%m")
+        if today == bday and yearNow not in str(item['Year']):
+            sendEmail(item['Email'], "Happy Birthday", item['Dialogue'])
+            writeInd.append(index)
+
+    print(writeInd)
+
+    for i in writeInd:
+        yr = df.at[i, 'Year']
+        df.loc[i, 'Year'] = str(yr) + ',' + str(yearNow)
+
+    df.to_excel('data.xlsx', index=False)
